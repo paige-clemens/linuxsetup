@@ -6,8 +6,8 @@
   
   vars:
     domain: "paigevirtualdesktop.tailb19a40.ts.net"
-    ssl_cert_path: "{{ playbook_dir }}/ssl_certs/{{ domain }}-cert.pem"
-    ssl_key_path: "{{ playbook_dir }}/ssl_certs/{{ domain }}-key.pem"
+    ssl_cert_path: "{{ playbook_dir }}/ssl_certs/{{ domain }}.crt"
+    ssl_key_path: "{{ playbook_dir }}/ssl_certs/{{ domain }}.key"
     backend_port: 8080
     nginx_port: 443
     

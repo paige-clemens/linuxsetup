@@ -63,6 +63,10 @@ echo -e "${GREEN}✓ CSR created${NC}"
 
 # Step 5: Create SAN configuration file
 SAN_CONFIG="${CERT_DIR}/${DOMAIN}-san.cnf"
+
+# Try to detect Tailscale IP
+TAILSCALE_IP=$(ip addr show tailscale0 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1)
+
 cat > "${SAN_CONFIG}" <<EOF
 [req]
 distinguished_name = req_distinguished_name
@@ -88,6 +92,12 @@ DNS.2 = *.${DOMAIN}
 DNS.3 = localhost
 IP.1 = 127.0.0.1
 EOF
+
+# Add Tailscale IP if detected
+if [ -n "${TAILSCALE_IP}" ]; then
+    echo "IP.2 = ${TAILSCALE_IP}" >> "${SAN_CONFIG}"
+    echo -e "${GREEN}✓ Detected Tailscale IP: ${TAILSCALE_IP}${NC}"
+fi
 
 # Step 6: Sign the certificate with the CA
 echo -e "${BLUE}[5/6] Signing certificate with CA...${NC}"

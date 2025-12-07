@@ -157,3 +157,40 @@
      - "yzhang.markdown-all-in-one"
      - "redhat.vscode-yaml"
      - dracula-theme.theme-dracula
+
+  - name: Fix iPad VNC Tilde Key - Create .inputrc
+    copy:
+      content: |
+        # Map the small tilde character (U+02DC) to regular tilde for iPad VNC
+        "˜": "~"
+      dest: "~/.inputrc"
+      mode: '0644'
+
+  - name: Fix iPad VNC Tilde Key - Create Xmodmap
+    copy:
+      content: |
+        ! Fix tilde key for iPad VNC clients
+        ! iPad sends keycode 248 for tilde
+        keycode 248 = asciitilde grave asciitilde grave
+      dest: "~/.Xmodmap"
+      mode: '0644'
+
+  - name: Fix iPad VNC Tilde Key - Create autostart directory
+    file:
+      path: "~/.config/autostart"
+      state: directory
+      mode: '0755'
+
+  - name: Fix iPad VNC Tilde Key - Create autostart entry
+    copy:
+      content: |
+        [Desktop Entry]
+        Type=Application
+        Name=Load Xmodmap
+        Exec=xmodmap /home/pclemens/.Xmodmap
+        Hidden=false
+        NoDisplay=false
+        X-GNOME-Autostart-enabled=true
+        X-GNOME-Autostart-Delay=2
+      dest: "~/.config/autostart/xmodmap.desktop"
+      mode: '0644'
