@@ -2,6 +2,10 @@
 - hosts: Local
   vars:
     deb_arch: "{{ 'amd64' if ansible_facts['architecture'] in ['x86_64', 'amd64'] else ('arm64' if ansible_facts['architecture'] in ['aarch64', 'arm64'] else ansible_facts['architecture']) }}"
+    is_debian: "{{ ansible_facts['os_family'] == 'Debian' }}"
+    is_fedora: "{{ ansible_facts['os_family'] == 'RedHat' }}"
+    git_user_name: "Paige Clemens"
+    git_user_email: "pclemens365@gmail.com"
   tasks:
 
   - name: Ensure apt keyrings directory exists
@@ -10,20 +14,21 @@
       state: directory
       mode: '0755'
     become: true
+    when: is_debian
   - name: Download Steam GPG key
     ansible.builtin.get_url:
       url: http://repo.steampowered.com/steam/archive/stable/steam.gpg
       dest: /etc/apt/keyrings/steam.asc
       mode: '0644'
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Dearmor Steam GPG key
     ansible.builtin.command: gpg --dearmor -o /etc/apt/keyrings/steam.gpg /etc/apt/keyrings/steam.asc
     args:
       creates: /etc/apt/keyrings/steam.gpg
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Clean up old Steam sources
     ansible.builtin.file:
@@ -33,7 +38,7 @@
     loop:
       - /etc/apt/sources.list.d/steam.list 
       - /etc/apt/sources.list.d/steam-beta.list
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Add Steam repository
     ansible.builtin.apt_repository:
@@ -41,12 +46,13 @@
       state: present
       filename: steam
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Update apt cache
     ansible.builtin.apt:
       update_cache: yes
     become: true
+    when: is_debian
 
   - name: Install apt prerequisites
     ansible.builtin.apt:
@@ -56,6 +62,7 @@
         - gnupg
       state: present
     become: true
+    when: is_debian
 
   - name: Download Spotify GPG key
     ansible.builtin.get_url:
@@ -63,12 +70,12 @@
       dest: /etc/apt/keyrings/spotify.asc
       mode: '0644'
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Dearmor Spotify GPG key
     ansible.builtin.command: gpg --dearmor --yes -o /etc/apt/keyrings/spotify.gpg /etc/apt/keyrings/spotify.asc
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Add Spotify repository
     ansible.builtin.apt_repository:
@@ -76,14 +83,49 @@
       state: present
       filename: spotify
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Update apt cache after adding repositories
     ansible.builtin.apt:
       update_cache: yes
     become: true
+    when: is_debian
 
-  - name: install packages
+  - name: Enable RPM Fusion Free repository
+    ansible.builtin.dnf:
+      name: "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-{{ ansible_facts['distribution_major_version'] }}.noarch.rpm"
+      state: present
+      disable_gpg_check: yes
+    become: true
+    when: is_fedora
+
+  - name: Enable RPM Fusion Nonfree repository
+    ansible.builtin.dnf:
+      name: "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-{{ ansible_facts['distribution_major_version'] }}.noarch.rpm"
+      state: present
+      disable_gpg_check: yes
+    become: true
+    when: is_fedora
+
+  - name: Import VS Code GPG key (Fedora)
+    ansible.builtin.rpm_key:
+      key: https://packages.microsoft.com/keys/microsoft.asc
+      state: present
+    become: true
+    when: is_fedora
+
+  - name: Add VS Code repository (Fedora)
+    ansible.builtin.yum_repository:
+      name: vscode
+      description: Visual Studio Code
+      baseurl: https://packages.microsoft.com/yumrepos/vscode
+      enabled: yes
+      gpgcheck: yes
+      gpgkey: https://packages.microsoft.com/keys/microsoft.asc
+    become: true
+    when: is_fedora
+
+  - name: install packages (Debian)
     ansible.builtin.apt:
       name: "{{ item }}"
       state: present
@@ -110,7 +152,6 @@
       - redis
       - tree
       - jq
-      - yarnpkg
       - apt-transport-https
       - libgl1-mesa-dri:amd64
       - libgl1-mesa-dri:i386
@@ -119,13 +160,57 @@
       - onedrive
       - thunderbird
     become: true
+    when: is_debian
 
-  - name: Install Spotify client
+  - name: install packages (Fedora)
+    ansible.builtin.dnf:
+      name: "{{ item }}"
+      state: present
+    loop:
+      - autoconf
+      - automake
+      - bash
+      - clang-tools-extra
+      - cmake
+      - coreutils
+      - dos2unix
+      - fping
+      - htop
+      - p7zip
+      - p7zip-plugins
+      - pbzip2
+      - pigz
+      - tmux
+      - vim
+      - w3m
+      - wget
+      - zsh
+      - zsh-syntax-highlighting
+      - npm
+      - redis
+      - tree
+      - jq
+      - mesa-dri-drivers
+      - wireshark
+      - redshift-gtk
+      - onedrive
+      - thunderbird
+    become: true
+    when: is_fedora
+
+  - name: Install Spotify client (Debian)
     ansible.builtin.apt:
       name: spotify-client
       state: present
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
+
+  - name: Install Spotify client (Fedora)
+    ansible.builtin.command: flatpak install -y flathub com.spotify.Client
+    args:
+      creates: /var/lib/flatpak/app/com.spotify.Client
+    become: true
+    when: is_fedora
 
   - name: Download VS Code deb
     ansible.builtin.get_url:
@@ -133,13 +218,20 @@
       dest: /tmp/vscode.deb
       mode: '0644'
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Install VS Code deb
     ansible.builtin.apt:
       deb: /tmp/vscode.deb
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
+
+  - name: Install VS Code (Fedora)
+    ansible.builtin.dnf:
+      name: code
+      state: present
+    become: true
+    when: is_fedora
 
   - name: Download Bitwarden deb
     ansible.builtin.get_url:
@@ -147,11 +239,29 @@
       dest: /tmp/bitwarden.deb
       mode: '0644'
     become: true
+    when: is_debian
 
   - name: Install Bitwarden deb
     ansible.builtin.apt:
       deb: /tmp/bitwarden.deb
     become: true
+    when: is_debian
+
+  - name: Download Bitwarden rpm
+    ansible.builtin.get_url:
+      url: https://vault.bitwarden.com/download/?app=desktop&platform=linux&variant=rpm
+      dest: /tmp/bitwarden.rpm
+      mode: '0644'
+    become: true
+    when: is_fedora
+
+  - name: Install Bitwarden rpm
+    ansible.builtin.dnf:
+      name: /tmp/bitwarden.rpm
+      state: present
+      disable_gpg_check: yes
+    become: true
+    when: is_fedora
 
   - name: Download Docker Desktop deb
     ansible.builtin.get_url:
@@ -159,7 +269,7 @@
       dest: /tmp/docker-desktop.deb
       mode: '0644'
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Download Docker GPG key
     ansible.builtin.get_url:
@@ -167,12 +277,12 @@
       dest: /etc/apt/keyrings/docker.asc
       mode: '0644'
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Dearmor Docker GPG key
     ansible.builtin.command: gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Add Docker repository
     ansible.builtin.apt_repository:
@@ -180,13 +290,13 @@
       state: present
       filename: docker
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Update apt cache after adding Docker repository
     ansible.builtin.apt:
       update_cache: yes
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Install Docker Desktop dependencies
     ansible.builtin.apt:
@@ -197,13 +307,44 @@
         - docker-compose-plugin
       state: present
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Install Docker Desktop deb
     ansible.builtin.apt:
       deb: /tmp/docker-desktop.deb
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
+
+  - name: Add Docker repository (Fedora)
+    ansible.builtin.yum_repository:
+      name: docker-ce
+      description: Docker CE Stable
+      baseurl: https://download.docker.com/linux/fedora/$releasever/$basearch/stable
+      enabled: yes
+      gpgcheck: yes
+      gpgkey: https://download.docker.com/linux/fedora/gpg
+    become: true
+    when: is_fedora
+
+  - name: Install Docker (Fedora)
+    ansible.builtin.dnf:
+      name:
+        - docker-ce
+        - docker-ce-cli
+        - containerd.io
+        - docker-buildx-plugin
+        - docker-compose-plugin
+      state: present
+    become: true
+    when: is_fedora
+
+  - name: Start and enable Docker service (Fedora)
+    ansible.builtin.systemd:
+      name: docker
+      state: started
+      enabled: yes
+    become: true
+    when: is_fedora
 
   - name: Download Discord deb
     ansible.builtin.get_url:
@@ -211,13 +352,28 @@
       dest: /tmp/discord.deb
       mode: '0644'
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
 
   - name: Install Discord deb
     ansible.builtin.apt:
       deb: /tmp/discord.deb
     become: true
-    when: deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64'
+
+  - name: Download Discord rpm
+    ansible.builtin.get_url:
+      url: https://discord.com/api/download?platform=linux&format=tar.gz
+      dest: /tmp/discord.tar.gz
+      mode: '0644'
+    become: true
+    when: is_fedora
+
+  - name: Install Discord (Fedora via Flatpak)
+    ansible.builtin.command: flatpak install -y flathub com.discordapp.Discord
+    args:
+      creates: /var/lib/flatpak/app/com.discordapp.Discord
+    become: true
+    when: is_fedora
 
   - name: Deploy Updated Profiles
     template:
@@ -227,6 +383,18 @@
     loop:
       - "zsh"
       - "bash"
+
+  - name: Configure Git user name
+    community.general.git_config:
+      name: user.name
+      scope: global
+      value: "{{ git_user_name }}"
+
+  - name: Configure Git user email
+    community.general.git_config:
+      name: user.email
+      scope: global
+      value: "{{ git_user_email }}"
 
   - name: Setup Oh My Zsh
     shell: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
