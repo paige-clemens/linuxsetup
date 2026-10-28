@@ -1,5 +1,8 @@
 ---
 - hosts: Local
+  gather_subset:
+    - "!all"
+    - env
   vars:
     deb_arch: "{{ 'amd64' if ansible_facts['architecture'] in ['x86_64', 'amd64'] else ('arm64' if ansible_facts['architecture'] in ['aarch64', 'arm64'] else ansible_facts['architecture']) }}"
     is_debian: "{{ ansible_facts['os_family'] == 'Debian' }}"
@@ -7,6 +10,16 @@
     git_user_name: "Paige Clemens"
     git_user_email: "pclemens365@gmail.com"
   tasks:
+
+  - name: Check for sudo.ws
+    ansible.builtin.stat:
+      path: /usr/bin/sudo.ws
+    register: sudo_ws
+
+  - name: Use sudo.ws instead of sudo-rs
+    ansible.builtin.set_fact:
+      ansible_become_exe: /usr/bin/sudo.ws
+    when: sudo_ws.stat.exists
 
   - name: Ensure apt keyrings directory exists
     ansible.builtin.file:
@@ -45,12 +58,15 @@
       repo: "deb [arch=amd64,i386 signed-by=/etc/apt/keyrings/steam.gpg] http://repo.steampowered.com/steam/ stable steam"
       state: present
       filename: steam
+      update_cache: false
+    register: steam_repo
     become: true
     when: is_debian and deb_arch == 'amd64'
 
   - name: Update apt cache
     ansible.builtin.apt:
       update_cache: yes
+      cache_valid_time: 3600
     become: true
     when: is_debian
 
@@ -74,6 +90,8 @@
 
   - name: Dearmor Spotify GPG key
     ansible.builtin.command: gpg --dearmor --yes -o /etc/apt/keyrings/spotify.gpg /etc/apt/keyrings/spotify.asc
+    args:
+      creates: /etc/apt/keyrings/spotify.gpg
     become: true
     when: is_debian and deb_arch == 'amd64'
 
@@ -82,6 +100,8 @@
       repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/spotify.gpg] https://repository.spotify.com stable non-free"
       state: present
       filename: spotify
+      update_cache: false
+    register: spotify_repo
     become: true
     when: is_debian and deb_arch == 'amd64'
 
@@ -89,7 +109,7 @@
     ansible.builtin.apt:
       update_cache: yes
     become: true
-    when: is_debian
+    when: is_debian and (steam_repo.changed | default(false) or spotify_repo.changed | default(false))
 
   - name: Enable RPM Fusion Free repository
     ansible.builtin.dnf:
@@ -127,74 +147,72 @@
 
   - name: install packages (Debian)
     ansible.builtin.apt:
-      name: "{{ item }}"
+      name:
+        - autoconf
+        - automake
+        - bash
+        - clang-format
+        - cmake
+        - coreutils
+        - dos2unix
+        - fping
+        - htop
+        - p7zip
+        - pbzip2
+        - pigz
+        - tmux
+        - vim
+        - w3m
+        - wget
+        - zsh
+        - zsh-syntax-highlighting
+        - npm
+        - redis
+        - tree
+        - jq
+        - apt-transport-https
+        - libgl1-mesa-dri:amd64
+        - libgl1-mesa-dri:i386
+        - wireshark
+        - redshift-gtk
+        - onedrive
+        - thunderbird
       state: present
-    loop:
-      - autoconf
-      - automake
-      - bash
-      - clang-format
-      - cmake
-      - coreutils
-      - dos2unix
-      - fping
-      - htop
-      - p7zip
-      - pbzip2
-      - pigz
-      - tmux
-      - vim
-      - w3m
-      - wget
-      - zsh
-      - zsh-syntax-highlighting
-      - npm
-      - redis
-      - tree
-      - jq
-      - apt-transport-https
-      - libgl1-mesa-dri:amd64
-      - libgl1-mesa-dri:i386
-      - wireshark
-      - redshift-gtk
-      - onedrive
-      - thunderbird
     become: true
     when: is_debian
 
   - name: install packages (Fedora)
     ansible.builtin.dnf:
-      name: "{{ item }}"
+      name:
+        - autoconf
+        - automake
+        - bash
+        - clang-tools-extra
+        - cmake
+        - coreutils
+        - dos2unix
+        - fping
+        - htop
+        - p7zip
+        - p7zip-plugins
+        - pbzip2
+        - pigz
+        - tmux
+        - vim
+        - w3m
+        - wget
+        - zsh
+        - zsh-syntax-highlighting
+        - npm
+        - redis
+        - tree
+        - jq
+        - mesa-dri-drivers
+        - wireshark
+        - redshift-gtk
+        - onedrive
+        - thunderbird
       state: present
-    loop:
-      - autoconf
-      - automake
-      - bash
-      - clang-tools-extra
-      - cmake
-      - coreutils
-      - dos2unix
-      - fping
-      - htop
-      - p7zip
-      - p7zip-plugins
-      - pbzip2
-      - pigz
-      - tmux
-      - vim
-      - w3m
-      - wget
-      - zsh
-      - zsh-syntax-highlighting
-      - npm
-      - redis
-      - tree
-      - jq
-      - mesa-dri-drivers
-      - wireshark
-      - redshift-gtk
-      - onedrive
-      - thunderbird
     become: true
     when: is_fedora
 
@@ -273,7 +291,7 @@
 
   - name: Download Docker GPG key
     ansible.builtin.get_url:
-      url: https://download.docker.com/linux/debian/gpg
+      url: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg"
       dest: /etc/apt/keyrings/docker.asc
       mode: '0644'
     become: true
@@ -281,14 +299,18 @@
 
   - name: Dearmor Docker GPG key
     ansible.builtin.command: gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc
+    args:
+      creates: /etc/apt/keyrings/docker.gpg
     become: true
     when: is_debian and deb_arch == 'amd64'
 
   - name: Add Docker repository
     ansible.builtin.apt_repository:
-      repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian {{ ansible_facts['distribution_release'] }} stable"
+      repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }} {{ ansible_facts['distribution_release'] }} stable"
       state: present
       filename: docker
+      update_cache: false
+    register: docker_repo
     become: true
     when: is_debian and deb_arch == 'amd64'
 
@@ -296,7 +318,7 @@
     ansible.builtin.apt:
       update_cache: yes
     become: true
-    when: is_debian and deb_arch == 'amd64'
+    when: is_debian and deb_arch == 'amd64' and docker_repo.changed | default(false)
 
   - name: Install Docker Desktop dependencies
     ansible.builtin.apt:
@@ -425,8 +447,13 @@
     with_fileglob:
       - fonts/*.ttf
 
+  - name: List installed VS Code extensions
+    ansible.builtin.command: code --list-extensions
+    register: vscode_installed
+    changed_when: false
+
   - name: Install VS Code Extentions
-    shell: code --install-extension {{ item }}
+    ansible.builtin.command: code --install-extension {{ item }}
     loop:
      - "eamodio.gitlens"
      - "coenraads.bracket-pair-colorizer-2"
@@ -434,7 +461,10 @@
      - "oderwat.indent-rainbow"
      - "yzhang.markdown-all-in-one"
      - "redhat.vscode-yaml"
-     - dracula-theme.theme-dracula
+     - "dracula-theme.theme-dracula"
+     - "Continue.continue"
+    when: item | lower not in (vscode_installed.stdout_lines | map('lower') | list)
+    changed_when: true
 
   - name: Fix iPad VNC Tilde Key - Create .inputrc
     copy:
@@ -472,3 +502,35 @@
         X-GNOME-Autostart-Delay=2
       dest: "~/.config/autostart/xmodmap.desktop"
       mode: '0644'
+
+  - name: Create Continue config directory
+    file:
+      path: "~/.continue"
+      state: directory
+      mode: '0755'
+
+  - name: Read existing Continue config
+    ansible.builtin.slurp:
+      src: "{{ ansible_env.HOME }}/.continue/config.yaml"
+    register: continue_existing
+    failed_when: false
+
+  - name: Configure Continue (remote LLM backend)
+    copy:
+      content: |
+        name: Local Config
+        version: 1.0.0
+        schema: v1
+        models:
+          - name: Qwen2.5 Coder 32B
+            provider: openai
+            model: qwen2.5-coder-32b-instruct
+            apiBase: http://10.10.101.42:8000/v1
+            roles:
+              - chat
+              - edit
+              - apply
+              - autocomplete
+      dest: "~/.continue/config.yaml"
+      mode: '0600'
+    when: "continue_existing.content is not defined or 'models: []' in (continue_existing.content | b64decode)"
